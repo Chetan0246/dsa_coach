@@ -1,0 +1,163 @@
+import type { UserProgress, Settings, CodeFile } from '../types'
+
+const PROGRESS_KEY = 'patternpilot.progress.v1'
+const SETTINGS_KEY = 'patternpilot.settings.v1'
+const CODE_KEY = 'patternpilot.code.v1'
+
+export const emptyProgress = (): UserProgress => ({
+  version: 1,
+  solvedProblems: [],
+  attemptedProblems: [],
+  failedProblems: [],
+  problemStats: {},
+  patternStats: {},
+  reviewQueue: [],
+  mistakes: [],
+  notes: {},
+  attempts: [],
+  sessionHistory: [],
+  streak: 0,
+  lastPracticeDate: null,
+  confidence: {},
+})
+
+export const defaultSettings = (): Settings => ({
+  theme: 'dark',
+  dailyTarget: 2,
+  timedModeMinutes: 20,
+  onboardingDone: false,
+  coachMode: 'guided',
+})
+
+function readKey<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    return JSON.parse(raw) as T
+  } catch {
+    return null
+  }
+}
+
+function writeKey(key: string, value: unknown): boolean {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
+
+const strArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
+
+/** Validate an imported progress object; returns null when invalid. */
+export function validateProgress(data: unknown): UserProgress | null {
+  if (!isRecord(data)) return null
+  const d = data as Record<string, unknown>
+  if (strArray(d.solvedProblems) === null) return null
+  if (!strArray(d.attemptedProblems ?? []) || !strArray(d.failedProblems ?? [])) return null
+  if (!isRecord(d.problemStats) || !isRecord(d.patternStats)) return null
+  if (!isRecord(d.notes)) return null
+  if (!Array.isArray(d.reviewQueue)) return null
+  if (!Array.isArray(d.mistakes)) return null
+  if (!Array.isArray(d.attempts)) return null
+  if (!Array.isArray(d.sessionHistory)) return null
+  if (typeof d.streak !== 'number' || Number.isNaN(d.streak)) return null
+  if (d.lastPracticeDate !== null && typeof d.lastPracticeDate !== 'string') return null
+  if (!isRecord(d.confidence)) return null
+
+  return {
+    version: 1,
+    solvedProblems: d.solvedProblems as string[],
+    attemptedProblems: (d.attemptedProblems ?? []) as string[],
+    failedProblems: (d.failedProblems ?? []) as string[],
+    problemStats: d.problemStats as UserProgress['problemStats'],
+    patternStats: d.patternStats as UserProgress['patternStats'],
+    reviewQueue: (d.reviewQueue ?? []) as UserProgress['reviewQueue'],
+    mistakes: (d.mistakes ?? []) as UserProgress['mistakes'],
+    notes: d.notes as Record<string, string>,
+    attempts: (d.attempts ?? []) as UserProgress['attempts'],
+    sessionHistory: (d.sessionHistory ?? []) as UserProgress['sessionHistory'],
+    streak: d.streak as number,
+    lastPracticeDate: (d.lastPracticeDate ?? null) as string | null,
+    confidence: d.confidence as Record<string, number>,
+  }
+}
+
+export function loadProgress(): UserProgress {
+  const raw = readKey<UserProgress>(PROGRESS_KEY)
+  if (!raw) return emptyProgress()
+  const valid = validateProgress(raw)
+  return valid ?? emptyProgress()
+}
+
+export function saveProgress(p: UserProgress): boolean {
+  return writeKey(PROGRESS_KEY, p)
+}
+
+export function loadSettings(): Settings {
+  const raw = readKey<Partial<Settings>>(SETTINGS_KEY)
+  return { ...defaultSettings(), ...(raw ?? {}) }
+}
+
+export function saveSettings(s: Settings): boolean {
+  return writeKey(SETTINGS_KEY, s)
+}
+
+export function loadCode(): Record<string, string> {
+  return readKey<Record<string, string>>(CODE_KEY) ?? {}
+}
+
+export function saveCode(files: Record<string, string>): boolean {
+  return writeKey(CODE_KEY, files)
+}
+
+export function resetProgress(): void {
+  try {
+    localStorage.removeItem(PROGRESS_KEY)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function resetAll(): void {
+  try {
+    localStorage.removeItem(PROGRESS_KEY)
+    localStorage.removeItem(SETTINGS_KEY)
+    localStorage.removeItem(CODE_KEY)
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export function exportProgress(): string {
+  return JSON.stringify(loadProgress(), null, 2)
+}
+
+export function importProgress(json: string): { ok: true } | { ok: false; error: string } {
+  try {
+    const parsed = JSON.parse(json)
+    const valid = validateProgress(parsed)
+    if (!valid) return { ok: false, error: 'The file is valid JSON but does not match the PatternPilot progress schema.' }
+    return writeKey(PROGRESS_KEY, valid) ? { ok: true } : { ok: false, error: 'Could not write to localStorage (quota or privacy mode).' }
+  } catch (e) {
+    return { ok: false, error: 'The file could not be parsed as JSON. ' + (e instanceof Error ? e.message : '') }
+  }
+}
+
+/** True when localStorage is usable at all. */
+export function storageAvailable(): boolean {
+  try {
+    const probe = '__pp_probe__'
+    localStorage.setItem(probe, '1')
+    localStorage.removeItem(probe)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export type { CodeFile }
