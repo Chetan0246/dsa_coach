@@ -11,6 +11,7 @@ import {
   BarChart3,
   Timer,
   CircleAlert,
+  GraduationCap,
 } from 'lucide-react'
 import { useProgress } from '../../state/progress'
 import { classNames } from '../../lib/utils'
@@ -25,6 +26,7 @@ const MAIN = [
 ]
 
 const TOOLS = [
+  { to: '/java-foundations', label: 'Java Foundations', icon: GraduationCap },
   { to: '/drill', label: 'Pattern Drill', icon: CircleAlert },
   { to: '/mistakes', label: 'Mistake Log', icon: CircleAlert },
   { to: '/analytics', label: 'Analytics', icon: BarChart3 },

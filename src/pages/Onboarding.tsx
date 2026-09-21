@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { Compass } from 'lucide-react'
+import { Compass, BookOpen } from 'lucide-react'
 import { useProgress } from '../state/progress'
 import { PROBLEMS, TOTAL_PROBLEMS } from '../data'
 
@@ -12,6 +12,11 @@ export default function Onboarding() {
     navigate(`/practice/${PROBLEMS[0].id}`)
   }
 
+  const startFoundations = () => {
+    updateSettings({ onboardingDone: true })
+    navigate('/java-foundations')
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center p-6">
       <div className="card w-full max-w-lg p-8 text-center">
@@ -22,6 +27,12 @@ export default function Onboarding() {
         </p>
 
         <div className="mt-6 grid gap-3 text-left text-sm">
+          <div className="rounded-md border border-edge-dark p-3">
+            <div className="font-semibold">Step 0 — Java basics</div>
+            <div className="text-mute-dark">
+              New to Collections, toCharArray, or cleaning input? Do Java Foundations first — 10 short lessons and a quiz.
+            </div>
+          </div>
           <div className="rounded-md border border-edge-dark p-3">
             <div className="font-semibold">Your goal</div>
             <div className="text-mute-dark">{TOTAL_PROBLEMS} problems over 40–60 days, grouped into 18 pattern families.</div>
@@ -38,8 +49,11 @@ export default function Onboarding() {
           </div>
         </div>
 
-        <button className="btn-primary mt-6 w-full" onClick={start}>
-          <Compass className="h-4 w-4" /> Start Roadmap — Problem 1: {PROBLEMS[0].title}
+        <button className="btn-primary mt-6 w-full" onClick={startFoundations}>
+          <BookOpen className="h-4 w-4" /> Start with Java Foundations
+        </button>
+        <button className="btn-ghost mt-2 w-full" onClick={start}>
+          <Compass className="h-4 w-4" /> I know Java basics — start Problem 1: {PROBLEMS[0].title}
         </button>
         <button
           className="mt-3 text-xs text-mute-dark hover:text-accent"

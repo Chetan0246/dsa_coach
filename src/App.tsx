@@ -13,6 +13,8 @@ import Review from './pages/Review'
 import Mistakes from './pages/Mistakes'
 import Notes from './pages/Notes'
 import JavaToolkit from './pages/JavaToolkit'
+import JavaFoundations from './pages/JavaFoundations'
+import PatternReferencePdf from './pages/PatternReferencePdf'
 import Analytics from './pages/Analytics'
 import OAMode from './pages/OAMode'
 import SettingsPage from './pages/SettingsPage'
@@ -64,6 +66,8 @@ export default function App() {
               <Route path="/mistakes" element={<Mistakes />} />
               <Route path="/notes" element={<Notes />} />
               <Route path="/java-toolkit" element={<JavaToolkit />} />
+              <Route path="/java-foundations" element={<JavaFoundations />} />
+              <Route path="/patterns-pdf" element={<PatternReferencePdf />} />
               <Route path="/analytics" element={<Analytics />} />
               <Route path="/oa-mode" element={<OAMode />} />
               <Route path="/settings" element={<SettingsPage />} />

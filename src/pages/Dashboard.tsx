@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom'
-import { Play, Flame, Target, CheckCircle2, TrendingUp, TrendingDown } from 'lucide-react'
+import { Play, Flame, Target, CheckCircle2, TrendingUp, TrendingDown, BookOpen } from 'lucide-react'
 import PageHeader from '../components/common/PageHeader'
 import ProgressBar from '../components/common/ProgressBar'
 import EmptyState from '../components/common/EmptyState'
@@ -32,17 +32,22 @@ export default function Dashboard() {
       <div className="mx-auto max-w-5xl p-6 lg:p-8">
         <PageHeader title="PatternPilot" subtitle="Train your pattern recognition. Not your memory." />
         <EmptyState
-          title="Your roadmap is waiting."
-          message={`Start with Problem #1: ${PROBLEMS[0].title}. ${TOTAL_PROBLEMS} problems, one pattern at a time.`}
+          title="Learn the tools before the patterns."
+          message={`Step 1: brush up Java basics — Collections, toCharArray, cleaning input with regex — in Java Foundations (10 short lessons + a quiz). Step 2: start the roadmap with ${PROBLEMS[0].title}. ${TOTAL_PROBLEMS} problems, one pattern at a time.`}
           action={
-            <Link to={`/practice/${PROBLEMS[0].id}`} className="btn-primary">
-              <Play className="h-4 w-4" /> Start with Two Sum
-            </Link>
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link to="/java-foundations" className="btn-primary">
+                <BookOpen className="h-4 w-4" /> Java Foundations first
+              </Link>
+              <Link to={`/practice/${PROBLEMS[0].id}`} className="btn-ghost">
+                <Play className="h-4 w-4" /> Skip to Two Sum
+              </Link>
+            </div>
           }
         />
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <InfoCard title="Your goal" body={`${TOTAL_PROBLEMS} problems over 40–60 days, pattern-first.`} />
-          <InfoCard title="Your language" body="Java. Templates and toolkit included." />
+          <InfoCard title="Step 1 — Basics" body="Java Foundations: Collections, String methods, regex cleaning, top-K idioms. Take the quiz when done." />
+          <InfoCard title="Step 2 — Patterns" body={`${TOTAL_PROBLEMS} problems over 40–60 days, pattern-first. Java templates included.`} />
           <InfoCard title="Daily target" body={`${settings.dailyTarget} problems per day — adjust in Settings.`} />
         </div>
       </div>

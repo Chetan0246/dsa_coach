@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Search } from 'lucide-react'
+import { Search, FileText } from 'lucide-react'
 import { useState } from 'react'
 import PageHeader from '../components/common/PageHeader'
 import EmptyState from '../components/common/EmptyState'
@@ -35,6 +35,20 @@ export default function Notes() {
           </div>
         }
       />
+
+      <section id="patterns-pdf" className="card mb-6 flex flex-wrap items-center gap-4 p-5 scroll-mt-6">
+        <div className="rounded-lg bg-accent-soft p-3">
+          <FileText className="h-6 w-6 text-accent" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="font-semibold">Java DSA Patterns — PDF reference</h2>
+          <p className="text-sm text-mute-dark">
+            Every pattern with recognition signals, mental trigger, Java template, common traps, and practice
+            problems. Keep it on your phone for revision; print it for your desk.
+          </p>
+        </div>
+        <Link to="/patterns-pdf" className="btn-primary text-sm">Open reference</Link>
+      </section>
 
       {entries.length === 0 ? (
         <EmptyState
