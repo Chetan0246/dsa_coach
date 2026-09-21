@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle2, XCircle, ArrowRight, RefreshCw } from 'lucide-react'
-import { FOUNDATION_QUESTIONS } from '../data/foundationQuiz'
-import { classNames } from '../lib/utils'
+import { FOUNDATION_QUESTIONS } from '../../data/foundationQuiz'
+import { classNames } from '../../lib/utils'
 
 const LETTERS = ['A', 'B', 'C', 'D']
 
