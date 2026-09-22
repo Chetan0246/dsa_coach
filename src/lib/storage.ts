@@ -76,7 +76,7 @@ export function validateProgress(data: unknown): UserProgress | null {
   const streakFreezes = typeof d.streakFreezes === 'number' && Number.isFinite(d.streakFreezes)
     ? Math.max(0, Math.min(2, Math.floor(d.streakFreezes)))
     : 0
-  const streakFreezeDays = strArray(d.streakFreezeDays ?? []) ? (d.streakFreezeDays as string[]) : []
+  const streakFreezeDays = strArray(d.streakFreezeDays) ? d.streakFreezeDays : []
 
   // Auto-repair: default weeklyPlan for older exports/records missing it.
   const weeklyPlan = isRecord(d.weeklyPlan)
@@ -107,7 +107,11 @@ export function loadProgress(): UserProgress {
   const raw = readKey<UserProgress>(PROGRESS_KEY)
   if (!raw) return emptyProgress()
   const valid = validateProgress(raw)
-  return valid ?? emptyProgress()
+  const p = valid ?? emptyProgress()
+  // Defensive defaults: never let a partially-shaped legacy record crash the app.
+  if (!Array.isArray(p.streakFreezeDays)) p.streakFreezeDays = []
+  if (typeof p.streakFreezes !== 'number' || !Number.isFinite(p.streakFreezes)) p.streakFreezes = 0
+  return p
 }
 
 export function saveProgress(p: UserProgress): boolean {
