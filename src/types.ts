@@ -150,7 +150,12 @@ export interface UserProgress {
   sessionHistory: SessionHistoryItem[]
   streak: number
   lastPracticeDate: string | null
+  /** Current streak-freeze balance (auto-consumed to bridge a missed day). */
+  streakFreezes: number
+  /** ISO day keys where a freeze was consumed to bridge a 1-day gap. */
+  streakFreezeDays: string[]
   confidence: Record<string, number>
+  weeklyPlan: WeeklyPlan | null
 }
 
 export interface ProgressSnapshot {
@@ -167,6 +172,33 @@ export interface ProgressSnapshot {
   strongestPattern: string | null
   weakestPattern: string | null
   avgConfidence: number
+}
+
+export type DayTaskKind = 'new' | 'review' | 'drill' | 'oa' | 'review-session'
+
+export interface DayTask {
+  kind: DayTaskKind
+  /** Problem id when kind = 'new' | 'review' | 'oa'; omitted for 'drill' | 'review-session'. */
+  problemId?: string
+  label: string
+  /** Target count for the task (problems to solve, drills to run, sessions to complete). */
+  target: number
+}
+
+export interface DayPlan {
+  /** ISO day key, e.g. 2026-09-22. */
+  date: string
+  tasks: DayTask[]
+  /** 1 = Monday … 7 = Sunday. */
+  weekday: number
+}
+
+export interface WeeklyPlan {
+  /** ISO day key of the plan's Monday. */
+  weekStart: string
+  days: DayPlan[]
+  /** Completed items: key = `${date}|${taskId}` (`${date}|*` = whole day checked off). */
+  completedTasks: Record<string, true>
 }
 
 export interface CodeFile {

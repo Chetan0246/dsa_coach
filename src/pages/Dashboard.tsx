@@ -3,6 +3,7 @@ import { Play, Flame, Target, CheckCircle2, TrendingUp, TrendingDown, BookOpen }
 import PageHeader from '../components/common/PageHeader'
 import ProgressBar from '../components/common/ProgressBar'
 import EmptyState from '../components/common/EmptyState'
+import WeeklyPlanView from '../components/dashboard/WeeklyPlanView'
 import { PHASES, PROBLEMS, TOTAL_PROBLEMS, getProblem } from '../data'
 import { PATTERNS } from '../data/patterns'
 import { useProgress } from '../state/progress'
@@ -49,6 +50,9 @@ export default function Dashboard() {
           <InfoCard title="Step 1 — Basics" body="Java Foundations: Collections, String methods, regex cleaning, top-K idioms. Take the quiz when done." />
           <InfoCard title="Step 2 — Patterns" body={`${TOTAL_PROBLEMS} problems over 40–60 days, pattern-first. Java templates included.`} />
           <InfoCard title="Daily target" body={`${settings.dailyTarget} problems per day — adjust in Settings.`} />
+        </div>
+        <div className="mt-4">
+          <WeeklyPlanView progress={progress} />
         </div>
       </div>
       )
@@ -126,6 +130,9 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+
+      {/* Weekly plan: daily targets, weekend OA, Sunday review + heatmap */}
+      <WeeklyPlanView progress={progress} />
 
       {/* Progress overview */}
       <section className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Progress overview">

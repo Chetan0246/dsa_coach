@@ -9,6 +9,7 @@ import type {
   ResultStatus,
   Settings,
   UserProgress,
+  WeeklyPlan,
 } from '../types'
 import {
   emptyProgress,
@@ -22,6 +23,15 @@ import {
   storageAvailable,
 } from '../lib/storage'
 import { todayKey, daysBetween, uid, clamp } from '../lib/utils'
+import {
+  adaptiveDailyTarget,
+  buildWeekPlan,
+  dayKeyOf,
+  MAX_STREAK_FREEZES,
+  weekAggregate,
+  weekStartOf,
+  weekStartPlus,
+} from '../lib/planner'
 
 interface Ctx {
   progress: UserProgress
@@ -42,6 +52,8 @@ interface Ctx {
   saveCodeFor: (problemId: string, code: string) => void
   updateSettings: (s: Partial<Settings>) => void
   resetEverything: () => void
+  setWeeklyPlan: (plan: WeeklyPlan) => void
+  togglePlanTask: (dateKey: string, taskKey: string) => void
   snapshot: ProgressSnapshot
 }
 
@@ -54,14 +66,32 @@ type Action =
   | { type: 'mistake'; mistake: Mistake }
   | { type: 'note'; problemId: string; text: string }
   | { type: 'settings'; settings: Settings }
+  | { type: 'plan-set'; plan: WeeklyPlan }
+  | { type: 'plan-toggle'; dateKey: string; taskKey: string }
   | { type: 'reset' }
 
 function touchStreak(p: UserProgress): void {
   const today = todayKey()
   if (p.lastPracticeDate === today) return
   const gap = p.lastPracticeDate ? daysBetween(p.lastPracticeDate, today) : 999
-  p.streak = gap === 1 ? p.streak + 1 : 1
+  if (gap === 1) {
+    p.streak += 1
+  } else if (gap === 2 && p.streakFreezes > 0 && p.lastPracticeDate) {
+    // Consume one freeze to bridge the missed day and keep the streak alive.
+    p.streakFreezes -= 1
+    p.streakFreezeDays.push(todayKey(new Date(new Date(today + 'T00:00:00').getTime() - 86_400_000)))
+    p.streak += 1
+  } else {
+    p.streak = 1
+  }
   p.lastPracticeDate = today
+}
+
+/** Award a freeze after every 4th solve, capped at MAX_STREAK_FREEZES. */
+function awardStreakFreezes(p: UserProgress): void {
+  const next = Math.floor(p.solvedProblems.length / 4)
+  if (next > p.streakFreezes) p.streakFreezes = Math.min(MAX_STREAK_FREEZES, next)
+  else p.streakFreezes = Math.min(p.streakFreezes, MAX_STREAK_FREEZES)
 }
 
 function applyGrade(item: { problemId: string; dueAt: number; intervalDays: number; lastGrade?: ReviewGrade; lastReviewedAt?: number }, grade: ReviewGrade) {
@@ -138,6 +168,7 @@ function reducer(state: UserProgress, action: Action): UserProgress {
       if (p.attempts.length > 400) p.attempts = p.attempts.slice(-400)
 
       touchStreak(p)
+      awardStreakFreezes(p)
       p.problemStats[problem.id] = stat
       return p
     }
@@ -163,6 +194,17 @@ function reducer(state: UserProgress, action: Action): UserProgress {
     }
     case 'settings':
       return state // handled outside reducer
+    case 'plan-set':
+      return { ...state, weeklyPlan: action.plan }
+    case 'plan-toggle': {
+      const plan = state.weeklyPlan
+      if (!plan) return state
+      const key = `${action.dateKey}|${action.taskKey}`
+      const completedTasks = { ...plan.completedTasks }
+      if (completedTasks[key] === true) delete completedTasks[key]
+      else completedTasks[key] = true
+      return { ...state, weeklyPlan: { ...plan, completedTasks } }
+    }
     case 'reset':
       return emptyProgress()
     default:
@@ -202,6 +244,43 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     saveCode(codeFiles)
   }, [codeFiles, storageOk])
 
+  // Keep the weekly plan aligned with the current week, the daily target and the
+  // plan shape (e.g. plans built before the OA day moved to Saturday).
+  useEffect(() => {
+    const ws = weekStartOf(new Date())
+    const plan = progress.weeklyPlan
+    const mondayNewCount = plan?.days[0]?.tasks.filter((t) => t.kind === 'new').length ?? -1
+    const shapeOk =
+      !!plan &&
+      plan.days[5]?.tasks.length === 1 &&
+      plan.days[5]?.tasks[0]?.kind === 'oa' &&
+      plan.days[6]?.tasks.length === 1 &&
+      plan.days[6]?.tasks[0]?.kind === 'review-session'
+    if (!plan || plan.weekStart !== ws || mondayNewCount !== settings.dailyTarget || !shapeOk) {
+      const prevAgg = weekAggregate(
+        dayKeyOf(weekStartPlus(ws, -7)),
+        (k) => buildWeekPlan(k, new Set(progress.solvedProblems), settings.dailyTarget, progress.reviewQueue, progress.attempts),
+        progress,
+      )
+      const prev2Agg = weekAggregate(
+        dayKeyOf(weekStartPlus(ws, -14)),
+        (k) => buildWeekPlan(k, new Set(progress.solvedProblems), settings.dailyTarget, progress.reviewQueue, progress.attempts),
+        progress,
+      )
+      const target = adaptiveDailyTarget(settings.dailyTarget, prevAgg, prev2Agg)
+      const rebuilt = buildWeekPlan(
+        ws,
+        new Set(progress.solvedProblems),
+        target,
+        progress.reviewQueue,
+        progress.attempts,
+      )
+      rebuilt.completedTasks = plan?.completedTasks ?? {}
+      dispatch({ type: 'plan-set', plan: rebuilt })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.dailyTarget])
+
   // Apply theme class to <html>
   useEffect(() => {
     const root = document.documentElement
@@ -229,6 +308,8 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
+  const snapshot = useMemo(() => computeSnapshot(progress), [progress])
+
   const value = useMemo<Ctx>(
     () => ({
       progress,
@@ -236,6 +317,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       codeFiles,
       storageOk,
       recordAttempt,
+      snapshot,
       scheduleReview: (problemId, grade) => dispatch({ type: 'review', problemId, grade }),
       addMistake: (m) =>
         dispatch({ type: 'mistake', mistake: { id: uid('mist'), createdAt: Date.now(), problemId: m.problemId, type: m.type, note: m.note } }),
@@ -246,14 +328,15 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, [problemId]: code }
         }),
       updateSettings: (s) => setSettings((prev) => ({ ...prev, ...s })),
+      setWeeklyPlan: (plan) => dispatch({ type: 'plan-set', plan }),
+      togglePlanTask: (dateKey, taskKey) => dispatch({ type: 'plan-toggle', dateKey, taskKey }),
       resetEverything: () => {
         resetAll()
         dispatch({ type: 'reset' })
         setSettings({ ...loadSettings(), onboardingDone: true })
       },
-      snapshot: useMemo(() => computeSnapshot(progress), [progress]),
     }),
-    [progress, settings, codeFiles, storageOk, recordAttempt],
+    [progress, settings, codeFiles, storageOk, recordAttempt, snapshot],
   )
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>

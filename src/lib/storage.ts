@@ -1,4 +1,5 @@
 import type { UserProgress, Settings, CodeFile } from '../types'
+import { buildWeekPlan, weekStartOf } from './planner'
 
 const PROGRESS_KEY = 'patternpilot.progress.v1'
 const SETTINGS_KEY = 'patternpilot.settings.v1'
@@ -18,7 +19,10 @@ export const emptyProgress = (): UserProgress => ({
   sessionHistory: [],
   streak: 0,
   lastPracticeDate: null,
+  streakFreezes: 0,
+  streakFreezeDays: [],
   confidence: {},
+  weeklyPlan: buildWeekPlan(weekStartOf(new Date()), new Set(), 2, [], []),
 })
 
 export const defaultSettings = (): Settings => ({
@@ -68,7 +72,16 @@ export function validateProgress(data: unknown): UserProgress | null {
   if (typeof d.streak !== 'number' || Number.isNaN(d.streak)) return null
   if (d.lastPracticeDate !== null && typeof d.lastPracticeDate !== 'string') return null
   if (!isRecord(d.confidence)) return null
+  // Auto-repair older records: streak-freeze fields default instead of failing import.
+  const streakFreezes = typeof d.streakFreezes === 'number' && Number.isFinite(d.streakFreezes)
+    ? Math.max(0, Math.min(2, Math.floor(d.streakFreezes)))
+    : 0
+  const streakFreezeDays = strArray(d.streakFreezeDays ?? []) ? (d.streakFreezeDays as string[]) : []
 
+  // Auto-repair: default weeklyPlan for older exports/records missing it.
+  const weeklyPlan = isRecord(d.weeklyPlan)
+    ? (d.weeklyPlan as unknown as UserProgress['weeklyPlan'])
+    : buildWeekPlan(weekStartOf(new Date()), new Set(), 2, [], [])
   return {
     version: 1,
     solvedProblems: d.solvedProblems as string[],
@@ -83,7 +96,10 @@ export function validateProgress(data: unknown): UserProgress | null {
     sessionHistory: (d.sessionHistory ?? []) as UserProgress['sessionHistory'],
     streak: d.streak as number,
     lastPracticeDate: (d.lastPracticeDate ?? null) as string | null,
+    streakFreezes,
+    streakFreezeDays,
     confidence: d.confidence as Record<string, number>,
+    weeklyPlan,
   }
 }
 
