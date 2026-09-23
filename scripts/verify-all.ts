@@ -15,6 +15,7 @@ import {
 } from '../src/lib/planner'
 import { computeScore, computeSnapshot } from '../src/state/progress'
 import { validateProgress, emptyProgress, exportProgress, importProgress } from '../src/lib/storage'
+import { REFERENCE_BOOKS, EXTERNAL_RESOURCES, PATTERN_DECISION_RULES } from '../src/data/referenceBooks'
 import type { UserProgress, Attempt, DayPlan } from '../src/types'
 
 let passed = 0
@@ -181,8 +182,32 @@ const snap = computeSnapshot(baseProgress)
 assert(snap.solvedCount === 1, `Expected 1 solved problem, got ${snap.solvedCount}`)
 assert(snap.solvedNoHints === 1, `Expected 1 solved without hints, got ${snap.solvedNoHints}`)
 
+console.log('--- 7. Testing Reference Books & Decision Rules ---')
+assert(REFERENCE_BOOKS.length >= 5, `Expected at least 5 reference books, got ${REFERENCE_BOOKS.length}`)
+const dsaHandbook = REFERENCE_BOOKS.find((b) => b.id === 'dsa-handbook-interviews')
+assert(Boolean(dsaHandbook), 'DSA Handbook for Coding Interviews must be present')
+assert(dsaHandbook?.author === 'Tharun Kumar Reddy Polu', 'DSA Handbook author check')
+assert(Boolean(dsaHandbook?.quickLinks && dsaHandbook.quickLinks.length >= 5), 'DSA Handbook should include quick topic deep links')
+
+for (const b of REFERENCE_BOOKS) {
+  assert(Boolean(b.id && b.title && b.author && b.url && b.license), `Book ${b.id} missing core fields`)
+  assert(b.keyTopics.length > 0, `Book ${b.id} must have keyTopics`)
+}
+
+assert(EXTERNAL_RESOURCES.length >= 5, `Expected >= 5 external resources, got ${EXTERNAL_RESOURCES.length}`)
+for (const res of EXTERNAL_RESOURCES) {
+  assert(Boolean(res.id && res.title && res.provider && res.url), `Resource ${res.id} missing core fields`)
+}
+
+assert(PATTERN_DECISION_RULES.length >= 15, `Expected >= 15 decision rules, got ${PATTERN_DECISION_RULES.length}`)
+for (const r of PATTERN_DECISION_RULES) {
+  assert(Boolean(r.signal && r.pattern && r.dataStructure && r.timeComplexity && r.exampleProblem), `Rule ${r.pattern} missing required fields`)
+  assert(Boolean(r.whenNotToUse), `Rule ${r.pattern} should have whenNotToUse safeguard`)
+}
+
 testRunner().then(() => {
   console.log(`\nResults: ${passed} passed, ${failed} failed.`)
   if (failed > 0) process.exit(1)
   console.log('✓ All verification tests passed!')
 })
+

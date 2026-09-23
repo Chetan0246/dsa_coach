@@ -7,6 +7,8 @@ import {
   ExternalLink,
   Download,
   Layers,
+  AlertTriangle,
+  Compass,
 } from 'lucide-react'
 import PageHeader from '../components/common/PageHeader'
 import EmptyState from '../components/common/EmptyState'
@@ -16,8 +18,10 @@ import { classNames } from '../lib/utils'
 import {
   REFERENCE_BOOKS,
   PATTERN_DECISION_RULES,
+  EXTERNAL_RESOURCES,
   type ReferenceBook,
   type PatternDecisionRule,
+  type ExternalResource,
 } from '../data/referenceBooks'
 
 type Tab = 'notes' | 'references' | 'matrix'
@@ -59,7 +63,8 @@ export default function Notes() {
         r.signal.toLowerCase().includes(needle) ||
         r.pattern.toLowerCase().includes(needle) ||
         r.dataStructure.toLowerCase().includes(needle) ||
-        r.exampleProblem.toLowerCase().includes(needle),
+        r.exampleProblem.toLowerCase().includes(needle) ||
+        (r.whenNotToUse && r.whenNotToUse.toLowerCase().includes(needle)),
     )
   }, [matrixFilter])
 
@@ -109,7 +114,7 @@ export default function Notes() {
           )}
           onClick={() => setTab('references')}
         >
-          <BookOpen className="h-4 w-4" /> Books & Reference PDFs (4)
+          <BookOpen className="h-4 w-4" /> Books & Reference Guides ({REFERENCE_BOOKS.length})
         </button>
         <button
           className={classNames(
@@ -210,10 +215,10 @@ export default function Notes() {
 
           <div>
             <h3 className="mb-1 text-sm font-semibold uppercase tracking-wide text-mute-dark">
-              Authoritative Free Books & PDFs on the Internet
+              Authoritative Free Books, Handbooks & PDFs
             </h3>
             <p className="mb-4 text-xs text-mute-dark">
-              Open-access textbooks and reference sheets covering pattern-based problem solving, Java collections internals, and algorithmic complexity.
+              Open-access textbooks, community handbooks, and reference sheets covering pattern-based problem solving, Java collections internals, and algorithmic complexity.
             </p>
 
             <div className="space-y-4">
@@ -271,8 +276,69 @@ export default function Notes() {
                     </div>
                   </div>
 
+                  {book.quickLinks && book.quickLinks.length > 0 && (
+                    <div className="mt-3 border-t border-edge-dark/60 pt-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-mute-dark">
+                        Quick Topic Deep Dives:
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {book.quickLinks.map((ql) => (
+                          <a
+                            key={ql.label}
+                            href={ql.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md border border-edge-dark bg-edge-dark/20 px-2.5 py-1 text-xs text-ink-dark transition-colors hover:border-accent hover:text-accent"
+                          >
+                            {ql.label} ↗
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="mt-3 rounded-md border border-accent/20 bg-accent-soft/30 p-2.5 text-xs text-mute-dark">
                     <strong className="text-accent">Recommended for:</strong> {book.recommendedFor}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Curated Cheatsheets & External Pattern Guides */}
+          <div className="pt-2">
+            <div className="mb-1 flex items-center gap-2">
+              <Compass className="h-4 w-4 text-accent" />
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-mute-dark">
+                Curated Cheatsheets & External Pattern Guides
+              </h3>
+            </div>
+            <p className="mb-4 text-xs text-mute-dark">
+              Community portals, visual algorithmic animations, and curated problem trackers.
+            </p>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              {EXTERNAL_RESOURCES.map((res: ExternalResource) => (
+                <div key={res.id} className="card flex flex-col justify-between p-4 transition-colors hover:border-accent/40">
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="code rounded bg-edge-dark/50 px-2 py-0.5 text-[10px] font-semibold text-ink-dark">
+                        {res.category}
+                      </span>
+                      <span className="code text-[11px] text-mute-dark">{res.provider}</span>
+                    </div>
+                    <h4 className="mt-2 text-sm font-bold text-ink-dark">{res.title}</h4>
+                    <p className="mt-1 text-xs leading-relaxed text-mute-dark">{res.description}</p>
+                  </div>
+                  <div className="mt-3 flex justify-end border-t border-edge-dark/40 pt-2">
+                    <a
+                      href={res.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-ghost !px-2.5 !py-1 text-xs hover:text-accent flex items-center gap-1"
+                    >
+                      Open resource <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
                 </div>
               ))}
@@ -289,7 +355,7 @@ export default function Notes() {
               <div>
                 <h3 className="font-semibold">Pattern Decision Matrix</h3>
                 <p className="text-xs text-mute-dark">
-                  “When I see X in the problem description, which pattern and Java structure should I immediately deploy?”
+                  “When I see X in the problem description, which pattern and Java structure should I immediately deploy — and what traps must I avoid?”
                 </p>
               </div>
               <div className="relative w-full sm:w-64">
@@ -328,6 +394,15 @@ export default function Notes() {
                   <div className="mt-2.5 rounded-md border border-edge-dark bg-black/20 p-2.5 font-mono text-xs text-good">
                     {rule.dataStructure}
                   </div>
+
+                  {rule.whenNotToUse && (
+                    <div className="mt-2.5 flex items-start gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/10 p-2 text-xs text-amber-200/90">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                      <div>
+                        <strong className="text-amber-300">When NOT to use:</strong> {rule.whenNotToUse}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs text-mute-dark">
                     <span>Try on:</span>
