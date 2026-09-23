@@ -6,6 +6,7 @@ import type {
   Problem,
   ProgressSnapshot,
   ReviewGrade,
+  ReviewItem,
   ResultStatus,
   Settings,
   UserProgress,
@@ -54,6 +55,8 @@ interface Ctx {
   resetEverything: () => void
   setWeeklyPlan: (plan: WeeklyPlan) => void
   togglePlanTask: (dateKey: string, taskKey: string) => void
+  setConfidence: (problemId: string, value: number) => void
+  reloadProgress: () => void
   snapshot: ProgressSnapshot
 }
 
@@ -68,6 +71,7 @@ type Action =
   | { type: 'settings'; settings: Settings }
   | { type: 'plan-set'; plan: WeeklyPlan }
   | { type: 'plan-toggle'; dateKey: string; taskKey: string }
+  | { type: 'confidence'; problemId: string; value: number }
   | { type: 'reset' }
 
 function touchStreak(p: UserProgress): void {
@@ -79,7 +83,9 @@ function touchStreak(p: UserProgress): void {
   } else if (gap === 2 && p.streakFreezes > 0 && p.lastPracticeDate) {
     // Consume one freeze to bridge the missed day and keep the streak alive.
     p.streakFreezes -= 1
-    p.streakFreezeDays.push(todayKey(new Date(new Date(today + 'T00:00:00').getTime() - 86_400_000)))
+    const missed = new Date()
+    missed.setDate(missed.getDate() - 1)
+    p.streakFreezeDays.push(todayKey(missed))
     p.streak += 1
   } else {
     p.streak = 1
@@ -87,14 +93,20 @@ function touchStreak(p: UserProgress): void {
   p.lastPracticeDate = today
 }
 
-/** Award a freeze after every 4th solve, capped at MAX_STREAK_FREEZES. */
+/**
+ * Award a freeze after every 4th solve, capped at MAX_STREAK_FREEZES. The grant
+ * counter never decreases, and the balance always equals granted − consumed, so
+ * consumed freezes cannot be silently refunded on the next solve.
+ */
 function awardStreakFreezes(p: UserProgress): void {
-  const next = Math.floor(p.solvedProblems.length / 4)
-  if (next > p.streakFreezes) p.streakFreezes = Math.min(MAX_STREAK_FREEZES, next)
-  else p.streakFreezes = Math.min(p.streakFreezes, MAX_STREAK_FREEZES)
+  const earned = Math.min(MAX_STREAK_FREEZES, Math.floor(p.solvedProblems.length / 4))
+  if (earned > p.streakFreezesGranted) {
+    p.streakFreezesGranted = earned
+    p.streakFreezes = Math.max(0, earned - p.streakFreezeDays.length)
+  }
 }
 
-function applyGrade(item: { problemId: string; dueAt: number; intervalDays: number; lastGrade?: ReviewGrade; lastReviewedAt?: number }, grade: ReviewGrade) {
+function gradedItem(item: ReviewItem, grade: ReviewGrade): ReviewItem {
   const intervals: Record<ReviewGrade, number> = {
     again: 1,
     hard: 2,
@@ -102,10 +114,13 @@ function applyGrade(item: { problemId: string; dueAt: number; intervalDays: numb
     easy: 7,
     mastered: 14,
   }
-  item.lastGrade = grade
-  item.lastReviewedAt = Date.now()
-  item.intervalDays = intervals[grade]
-  item.dueAt = Date.now() + item.intervalDays * 86_400_000
+  return {
+    ...item,
+    lastGrade: grade,
+    lastReviewedAt: Date.now(),
+    intervalDays: intervals[grade],
+    dueAt: Date.now() + intervals[grade] * 86_400_000,
+  }
 }
 
 function reducer(state: UserProgress, action: Action): UserProgress {
@@ -123,18 +138,23 @@ function reducer(state: UserProgress, action: Action): UserProgress {
         patternStats: { ...state.patternStats },
         reviewQueue: [...state.reviewQueue],
         attempts: [...state.attempts],
+        streakFreezeDays: [...state.streakFreezeDays],
       }
       const { attempt, problem } = action
       const solved = attempt.result.startsWith('solved')
-      const stat = p.problemStats[problem.id] ?? {
-        attempts: 0,
-        solved: 0,
-        failed: 0,
-        totalMinutes: 0,
-        hintsUsedTotal: 0,
-        bestScore: 0,
-        lastScore: 0,
-      }
+      // Copy nested stat objects: the spreads above only clone the outer records.
+      const prevStat = p.problemStats[problem.id]
+      const stat = prevStat
+        ? { ...prevStat }
+        : {
+            attempts: 0,
+            solved: 0,
+            failed: 0,
+            totalMinutes: 0,
+            hintsUsedTotal: 0,
+            bestScore: 0,
+            lastScore: 0,
+          }
       stat.attempts += 1
       stat.totalMinutes += attempt.minutes
       stat.hintsUsedTotal += attempt.hintsUsed
@@ -144,6 +164,8 @@ function reducer(state: UserProgress, action: Action): UserProgress {
       stat.lastPatternCorrect = attempt.patternCorrect
       stat.lastConfidence = attempt.confidence
       if (attempt.score > stat.bestScore) stat.bestScore = attempt.score
+      if (solved) stat.solved += 1
+      else stat.failed += 1
 
       if (solved && !p.solvedProblems.includes(problem.id)) p.solvedProblems.push(problem.id)
       if (!solved && !p.failedProblems.includes(problem.id)) p.failedProblems.push(problem.id)
@@ -157,7 +179,8 @@ function reducer(state: UserProgress, action: Action): UserProgress {
         scheduleOrBumpReview(p, problem.id, 'again')
       }
 
-      const ps = p.patternStats[problem.pattern] ?? { solved: 0, attempts: 0, scoreSum: 0, scoreCount: 0 }
+      const prevPs = p.patternStats[problem.pattern]
+      const ps = prevPs ? { ...prevPs } : { solved: 0, attempts: 0, scoreSum: 0, scoreCount: 0 }
       ps.attempts += 1
       if (solved) ps.solved += 1
       ps.scoreSum += attempt.score
@@ -174,16 +197,12 @@ function reducer(state: UserProgress, action: Action): UserProgress {
     }
 
     case 'review': {
-      const p = { ...state, reviewQueue: [...state.reviewQueue] }
-      const item = p.reviewQueue.find((r) => r.problemId === action.problemId)
-      if (item) {
-        applyGrade(item, action.grade)
-      } else {
-        const fresh = { problemId: action.problemId, dueAt: 0, intervalDays: 0 }
-        p.reviewQueue.push(fresh)
-        applyGrade(fresh, action.grade)
-      }
-      return p
+      const idx = state.reviewQueue.findIndex((r) => r.problemId === action.problemId)
+      const reviewQueue =
+        idx >= 0
+          ? state.reviewQueue.map((r, i) => (i === idx ? gradedItem(r, action.grade) : r))
+          : [...state.reviewQueue, gradedItem({ problemId: action.problemId, dueAt: 0, intervalDays: 0 }, action.grade)]
+      return { ...state, reviewQueue }
     }
     case 'mistake': {
       const p = { ...state, mistakes: [action.mistake, ...state.mistakes] }
@@ -205,6 +224,21 @@ function reducer(state: UserProgress, action: Action): UserProgress {
       else completedTasks[key] = true
       return { ...state, weeklyPlan: { ...plan, completedTasks } }
     }
+    case 'confidence':
+      return { ...state, confidence: { ...state.confidence, [action.problemId]: action.value } }
+    case 'confidence': {
+      // Store per-problem confidence and stamp it on the most recent attempt so
+      // Analytics' confidence-vs-outcome chart reflects the rating.
+      const confidence = { ...state.confidence, [action.problemId]: action.value }
+      let attempts = state.attempts
+      for (let i = attempts.length - 1; i >= 0; i--) {
+        if (attempts[i].problemId === action.problemId) {
+          attempts = attempts.map((a, j) => (j === i ? { ...a, confidence: action.value } : a))
+          break
+        }
+      }
+      return { ...state, confidence, attempts }
+    }
     case 'reset':
       return emptyProgress()
     default:
@@ -213,20 +247,26 @@ function reducer(state: UserProgress, action: Action): UserProgress {
 }
 
 function scheduleOrBumpReview(p: UserProgress, problemId: string, grade: ReviewGrade): void {
-  const item = p.reviewQueue.find((r) => r.problemId === problemId)
-  if (item) applyGrade(item, grade)
-  else {
-    const newItem = { problemId, dueAt: 0, intervalDays: 0 }
-    p.reviewQueue.push(newItem)
-    applyGrade(newItem, grade)
-  }
+  const idx = p.reviewQueue.findIndex((r) => r.problemId === problemId)
+  if (idx >= 0) p.reviewQueue[idx] = gradedItem(p.reviewQueue[idx], grade)
+  else p.reviewQueue.push(gradedItem({ problemId, dueAt: 0, intervalDays: 0 }, grade))
 }
 
 export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [progress, dispatch] = useReducer(reducer, undefined, loadProgress)
   const [settings, setSettings] = React.useState<Settings>(() => loadSettings())
   const [codeFiles, setCodeFiles] = React.useState<Record<string, string>>(() => loadCode())
+  const [today, setToday] = React.useState(() => todayKey())
   const storageOk = useMemo(() => storageAvailable(), [])
+
+  // Detect day/week rollover in long-lived sessions so the plan effect can fire.
+  React.useEffect(() => {
+    const t = setInterval(() => {
+      const k = todayKey()
+      setToday((prev) => (prev === k ? prev : k))
+    }, 30_000)
+    return () => clearInterval(t)
+  }, [])
 
   // Persist on every change
   useEffect(() => {
@@ -244,42 +284,35 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     saveCode(codeFiles)
   }, [codeFiles, storageOk])
 
-  // Keep the weekly plan aligned with the current week, the daily target and the
-  // plan shape (e.g. plans built before the OA day moved to Saturday).
-  useEffect(() => {
+  // Keep the weekly plan aligned with the current week, the plan shape (e.g.
+  // plans built before the OA day moved to Saturday) and the *effective*
+  // (adaptive) daily target — not the raw setting, or the effect would rebuild
+  // the same plan on every load.
+  React.useEffect(() => {
     const ws = weekStartOf(new Date())
     const plan = progress.weeklyPlan
-    const mondayNewCount = plan?.days[0]?.tasks.filter((t) => t.kind === 'new').length ?? -1
     const shapeOk =
       !!plan &&
+      plan.days.length === 7 &&
       plan.days[5]?.tasks.length === 1 &&
       plan.days[5]?.tasks[0]?.kind === 'oa' &&
       plan.days[6]?.tasks.length === 1 &&
       plan.days[6]?.tasks[0]?.kind === 'review-session'
-    if (!plan || plan.weekStart !== ws || mondayNewCount !== settings.dailyTarget || !shapeOk) {
-      const prevAgg = weekAggregate(
-        dayKeyOf(weekStartPlus(ws, -7)),
-        (k) => buildWeekPlan(k, new Set(progress.solvedProblems), settings.dailyTarget, progress.reviewQueue, progress.attempts),
-        progress,
-      )
-      const prev2Agg = weekAggregate(
-        dayKeyOf(weekStartPlus(ws, -14)),
-        (k) => buildWeekPlan(k, new Set(progress.solvedProblems), settings.dailyTarget, progress.reviewQueue, progress.attempts),
-        progress,
-      )
-      const target = adaptiveDailyTarget(settings.dailyTarget, prevAgg, prev2Agg)
-      const rebuilt = buildWeekPlan(
-        ws,
-        new Set(progress.solvedProblems),
-        target,
-        progress.reviewQueue,
-        progress.attempts,
-      )
+    const planFor = (k: string) =>
+      buildWeekPlan(k, new Set(progress.solvedProblems), settings.dailyTarget, progress.reviewQueue, progress.attempts)
+    const target = adaptiveDailyTarget(
+      settings.dailyTarget,
+      weekAggregate(dayKeyOf(weekStartPlus(ws, -7)), planFor, progress),
+      weekAggregate(dayKeyOf(weekStartPlus(ws, -14)), planFor, progress),
+    )
+    const mondayNewCount = plan?.days[0]?.tasks.filter((t) => t.kind === 'new').length ?? -1
+    if (!plan || plan.weekStart !== ws || !shapeOk || mondayNewCount !== target) {
+      const rebuilt = buildWeekPlan(ws, new Set(progress.solvedProblems), target, progress.reviewQueue, progress.attempts)
       rebuilt.completedTasks = plan?.completedTasks ?? {}
       dispatch({ type: 'plan-set', plan: rebuilt })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.dailyTarget])
+  }, [settings.dailyTarget, today])
 
   // Apply theme class to <html>
   useEffect(() => {
@@ -310,6 +343,14 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
 
   const snapshot = useMemo(() => computeSnapshot(progress), [progress])
 
+  const reloadProgress = React.useCallback(() => {
+    // Re-read localStorage after an import/reset so React state matches disk;
+    // otherwise the next save would silently overwrite the import.
+    dispatch({ type: 'load', progress: loadProgress() })
+    setSettings(loadSettings())
+    setCodeFiles(loadCode())
+  }, [])
+
   const value = useMemo<Ctx>(
     () => ({
       progress,
@@ -330,13 +371,15 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
       updateSettings: (s) => setSettings((prev) => ({ ...prev, ...s })),
       setWeeklyPlan: (plan) => dispatch({ type: 'plan-set', plan }),
       togglePlanTask: (dateKey, taskKey) => dispatch({ type: 'plan-toggle', dateKey, taskKey }),
+      setConfidence: (problemId, value) => dispatch({ type: 'confidence', problemId, value }),
+      reloadProgress,
       resetEverything: () => {
         resetAll()
         dispatch({ type: 'reset' })
         setSettings({ ...loadSettings(), onboardingDone: true })
       },
     }),
-    [progress, settings, codeFiles, storageOk, recordAttempt, snapshot],
+    [progress, settings, codeFiles, storageOk, recordAttempt, snapshot, reloadProgress],
   )
 
   return <ProgressContext.Provider value={value}>{children}</ProgressContext.Provider>

@@ -6,7 +6,7 @@ import { exportProgress, importProgress } from '../lib/storage'
 import { classNames } from '../lib/utils'
 
 export default function SettingsPage() {
-  const { settings, updateSettings, resetEverything, progress, storageOk } = useProgress()
+  const { settings, updateSettings, resetEverything, reloadProgress, progress, storageOk } = useProgress()
   const fileRef = useRef<HTMLInputElement>(null)
   const [confirmReset, setConfirmReset] = useState(false)
   const [importMsg, setImportMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -24,11 +24,14 @@ export default function SettingsPage() {
   const doImport = async (file: File) => {
     const text = await file.text()
     const result = importProgress(text)
-    setImportMsg(
-      result.ok
-        ? { ok: true, text: 'Progress imported. Reload to see it everywhere.' }
-        : { ok: false, text: result.error },
-    )
+    if (result.ok) {
+      // Pull the imported data into React state immediately; otherwise the
+      // next persist would silently overwrite the import.
+      reloadProgress()
+      setImportMsg({ ok: true, text: 'Progress imported.' })
+    } else {
+      setImportMsg({ ok: false, text: result.error })
+    }
   }
 
   return (

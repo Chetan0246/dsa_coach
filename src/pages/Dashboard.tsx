@@ -21,6 +21,7 @@ export default function Dashboard() {
 
   const dueReviews = progress.reviewQueue.filter((r) => r.dueAt <= Date.now())
   const reviewProblem = dueReviews.length > 0 ? getProblem(dueReviews[0].problemId) : undefined
+  const reviewLast = dueReviews[0]?.lastReviewedAt
 
   const todaySolved = progress.attempts.filter(
     (a) => a.result.startsWith('solved') && todayKey(new Date(a.at)) === todayKey(),
@@ -114,7 +115,9 @@ export default function Dashboard() {
               <Link to={`/practice/${reviewProblem.id}?mode=review`} className="underline hover:text-accent">
                 {reviewProblem.title}
               </Link>{' '}
-              <span className="text-mute-dark">— cleared last time {fmtRelative(Date.now() - 86400000)}.</span>
+              <span className="text-mute-dark">
+                {reviewLast ? `— last reviewed ${fmtRelative(reviewLast)}.` : '— never reviewed yet.'}
+              </span>
             </div>
           )}
         </div>

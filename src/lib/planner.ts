@@ -25,7 +25,19 @@ export function weekStartOf(d: Date): string {
 
 export function weekStartPlus(weekStart: string, days: number): Date {
   const start = new Date(weekStart + 'T00:00:00')
-  return new Date(start.getTime() + days * DAY_MS)
+  // Calendar arithmetic (not epoch ms) so DST transitions can't shift the day key.
+  return new Date(start.getFullYear(), start.getMonth(), start.getDate() + days)
+}
+
+/** Whole days from b to a, exact across DST transitions. */
+export function dayDiff(aKey: string, bKey: string): number {
+  const da = new Date(aKey + 'T00:00:00')
+  const db = new Date(bKey + 'T00:00:00')
+  return Math.round(
+    (Date.UTC(da.getFullYear(), da.getMonth(), da.getDate()) -
+      Date.UTC(db.getFullYear(), db.getMonth(), db.getDate())) /
+      DAY_MS,
+  )
 }
 
 export function nextWeekStart(weekStart: string): string {
@@ -79,12 +91,15 @@ export function buildWeekPlan(
     if (i < OA_DAY) {
       // Monday–Friday: keep the pattern warm every day.
       tasks.push({ kind: 'drill', label: 'Pattern Drill', target: 1 })
-      for (let k = 0; k < dailyTarget; k++) {
+      // fresh can be empty once every problem is solved — skip new-task slots
+      // instead of emitting `% 0` NaN indices and placeholder tasks.
+      for (let k = 0; k < dailyTarget && fresh.length > 0; k++) {
         const problem = fresh[(pickIndex + hashKey(date) + k) % fresh.length]
+        if (!problem) continue
         tasks.push({
           kind: 'new',
-          problemId: problem?.id,
-          label: problem?.title ?? 'New problem',
+          problemId: problem.id,
+          label: problem.title,
           target: 1,
         })
       }
@@ -250,8 +265,9 @@ export function weekAggregate(
   const plan = planFor(weekStart)
   if (!plan) return { weekStart, done: 0, target: 0, pct: 0, minutes: 0, solved: 0, hintsUsed: 0, daysActive: 0, dailyTarget: 0 }
   const statuses = weekStatus(plan, p)
+  // [Mon 00:00, next Mon 00:00) in local time — exact across DST transitions.
   const from = new Date(weekStart + 'T00:00:00').getTime()
-  const to = from + 7 * DAY_MS
+  const to = weekStartPlus(weekStart, 7).getTime()
   const attempts = p.attempts.filter((a) => a.at >= from && a.at < to)
   return {
     weekStart,
@@ -294,7 +310,7 @@ export function weekScore(agg: WeekAggregate): number {
   let expected = agg.target
   let isPast = false
   if (withinWeek(today, agg.weekStart)) {
-    const dayIdx = Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(agg.weekStart + 'T00:00:00').getTime()) / DAY_MS)
+    const dayIdx = dayDiff(today, agg.weekStart)
     expected = Math.max(1, Math.round((agg.target * (dayIdx + 1)) / 7))
   } else if (agg.weekStart < today) {
     isPast = true
@@ -318,9 +334,8 @@ export function weekGrade(score: number): WeekGrade {
 
 /** Whether `dayKey` falls within the Mon–Sun week starting `weekStart`. */
 export function withinWeek(dayKey: string, weekStart: string): boolean {
-  const t = new Date(dayKey + 'T00:00:00').getTime()
-  const s = new Date(weekStart + 'T00:00:00').getTime()
-  return t >= s && t < s + 7 * DAY_MS
+  const diff = dayDiff(dayKey, weekStart)
+  return diff >= 0 && diff <= 6
 }
 
 /** Direction of the score vs the previous week, with the delta. */

@@ -20,6 +20,7 @@ export const emptyProgress = (): UserProgress => ({
   streak: 0,
   lastPracticeDate: null,
   streakFreezes: 0,
+  streakFreezesGranted: 0,
   streakFreezeDays: [],
   confidence: {},
   weeklyPlan: buildWeekPlan(weekStartOf(new Date()), new Set(), 2, [], []),
@@ -57,11 +58,30 @@ const isRecord = (v: unknown): v is Record<string, unknown> =>
 
 const strArray = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')
 
+/** Minimal structural check for a stored WeeklyPlan; null when malformed. */
+function validWeeklyPlan(v: unknown): UserProgress['weeklyPlan'] {
+  if (!isRecord(v)) return null
+  if (typeof v.weekStart !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v.weekStart)) return null
+  if (!Array.isArray(v.days) || v.days.length !== 7) return null
+  for (const day of v.days) {
+    if (!isRecord(day)) return null
+    if (typeof day.date !== 'string' || typeof day.weekday !== 'number') return null
+    if (!Array.isArray(day.tasks)) return null
+    for (const t of day.tasks) {
+      if (!isRecord(t) || typeof t.kind !== 'string' || typeof t.label !== 'string' || typeof t.target !== 'number') {
+        return null
+      }
+    }
+  }
+  if (!isRecord(v.completedTasks)) return null
+  return v as unknown as UserProgress['weeklyPlan']
+}
+
 /** Validate an imported progress object; returns null when invalid. */
 export function validateProgress(data: unknown): UserProgress | null {
   if (!isRecord(data)) return null
   const d = data as Record<string, unknown>
-  if (strArray(d.solvedProblems) === null) return null
+  if (!strArray(d.solvedProblems)) return null
   if (!strArray(d.attemptedProblems ?? []) || !strArray(d.failedProblems ?? [])) return null
   if (!isRecord(d.problemStats) || !isRecord(d.patternStats)) return null
   if (!isRecord(d.notes)) return null
@@ -73,15 +93,20 @@ export function validateProgress(data: unknown): UserProgress | null {
   if (d.lastPracticeDate !== null && typeof d.lastPracticeDate !== 'string') return null
   if (!isRecord(d.confidence)) return null
   // Auto-repair older records: streak-freeze fields default instead of failing import.
-  const streakFreezes = typeof d.streakFreezes === 'number' && Number.isFinite(d.streakFreezes)
-    ? Math.max(0, Math.min(2, Math.floor(d.streakFreezes)))
-    : 0
-  const streakFreezeDays = strArray(d.streakFreezeDays) ? d.streakFreezeDays : []
+  const usedDays = strArray(d.streakFreezeDays) ? d.streakFreezeDays : []
+  const legacyBalance =
+    typeof d.streakFreezes === 'number' && Number.isFinite(d.streakFreezes)
+      ? Math.max(0, Math.min(2, Math.floor(d.streakFreezes)))
+      : 0
+  // Migrate: records without the granted counter get granted = balance + consumed.
+  const streakFreezesGranted =
+    typeof d.streakFreezesGranted === 'number' && Number.isFinite(d.streakFreezesGranted)
+      ? Math.max(legacyBalance + usedDays.length, Math.min(2, Math.floor(d.streakFreezesGranted)))
+      : legacyBalance + usedDays.length
+  const streakFreezeDays = usedDays
 
-  // Auto-repair: default weeklyPlan for older exports/records missing it.
-  const weeklyPlan = isRecord(d.weeklyPlan)
-    ? (d.weeklyPlan as unknown as UserProgress['weeklyPlan'])
-    : buildWeekPlan(weekStartOf(new Date()), new Set(), 2, [], [])
+  // Auto-repair: default weeklyPlan for older exports/records missing or malformed.
+  const weeklyPlan = validWeeklyPlan(d.weeklyPlan) ?? buildWeekPlan(weekStartOf(new Date()), new Set(), 2, [], [])
   return {
     version: 1,
     solvedProblems: d.solvedProblems as string[],
@@ -96,7 +121,8 @@ export function validateProgress(data: unknown): UserProgress | null {
     sessionHistory: (d.sessionHistory ?? []) as UserProgress['sessionHistory'],
     streak: d.streak as number,
     lastPracticeDate: (d.lastPracticeDate ?? null) as string | null,
-    streakFreezes,
+    streakFreezes: Math.min(streakFreezesGranted, Math.max(0, streakFreezesGranted - streakFreezeDays.length)),
+    streakFreezesGranted,
     streakFreezeDays,
     confidence: d.confidence as Record<string, number>,
     weeklyPlan,
@@ -111,6 +137,9 @@ export function loadProgress(): UserProgress {
   // Defensive defaults: never let a partially-shaped legacy record crash the app.
   if (!Array.isArray(p.streakFreezeDays)) p.streakFreezeDays = []
   if (typeof p.streakFreezes !== 'number' || !Number.isFinite(p.streakFreezes)) p.streakFreezes = 0
+  if (typeof p.streakFreezesGranted !== 'number' || !Number.isFinite(p.streakFreezesGranted)) {
+    p.streakFreezesGranted = p.streakFreezes + p.streakFreezeDays.length
+  }
   return p
 }
 

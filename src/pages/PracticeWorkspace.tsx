@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import type { CoachStageId, Problem, Settings } from '../types'
 import { getProblem } from '../data'
-import { useProgress } from '../state/progress'
+import { computeScore, useProgress } from '../state/progress'
 import { createCodeRunner } from '../lib/runner/runner'
 import { fmtClock, classNames } from '../lib/utils'
 import CoachPanel from '../components/practice/CoachPanel'
@@ -24,7 +24,7 @@ type Phase = 'practicing' | 'reflecting' | 'evaluated'
 export default function PracticeWorkspace() {
   const { problemId } = useParams()
   const [params] = useSearchParams()
-  const { progress, codeFiles, saveCodeFor, recordAttempt, scheduleReview, setNote } = useProgress()
+  const { progress, codeFiles, saveCodeFor, recordAttempt, scheduleReview, setNote, setConfidence } = useProgress()
   const problem: Problem | undefined = problemId ? getProblem(problemId) : undefined
 
   const mode: Settings['coachMode'] = useMemo(() => {
@@ -45,6 +45,7 @@ export default function PracticeWorkspace() {
   const [elapsed, setElapsed] = useState(0)
   const [mobileCoachOpen, setMobileCoachOpen] = useState(false)
   const runnerRef = useRef(createCodeRunner())
+  const submittingRef = useRef(false)
 
   const template = problem?.javaTemplate ?? `class Solution {\n}\n`
 
@@ -66,27 +67,15 @@ export default function PracticeWorkspace() {
     return () => clearInterval(t)
   }, [startedAt])
 
-  if (!problem) {
-    return (
-      <div className="mx-auto max-w-3xl p-8">
-        <EmptyState
-          title="Problem not found"
-          message="This problem does not exist in the curriculum. It may have been renamed or the link is stale."
-          action={<Link to="/roadmap" className="btn-primary">Back to Roadmap</Link>}
-        />
-      </div>
-    )
-  }
-
-  const solvedSet = new Set(progress.solvedProblems)
-  const alreadySolved = solvedSet.has(problem.id)
   const minutesSpent = Math.max(1, Math.round(elapsed / 60))
+  const prob = problem // narrowed alias for the hook closure; undefined-safe below
 
   const finishAttempt = useCallback(
     (answers: SubmissionAnswers, passed: boolean) => {
-      const patternCorrect = answers.pattern === problem.pattern
-      const timeCorrect = normalizeComplexity(answers.time) === normalizeComplexity(problem.complexity.time)
-      const spaceCorrect = normalizeComplexity(answers.space) === normalizeComplexity(problem.complexity.space)
+      if (!prob) return
+      const patternCorrect = answers.pattern === prob.pattern
+      const timeCorrect = normalizeComplexity(answers.time) === normalizeComplexity(prob.complexity.time)
+      const spaceCorrect = normalizeComplexity(answers.space) === normalizeComplexity(prob.complexity.space)
       const result =
         !passed
           ? 'failed'
@@ -95,9 +84,9 @@ export default function PracticeWorkspace() {
             : revealed
               ? 'solved-after-reveal'
               : 'solved-with-hints'
-      const score = computeScoreLocal(result, hintsUsed, minutesSpent, problem.estimatedMinutes)
+      const score = computeScore(result, hintsUsed, minutesSpent, prob.estimatedMinutes)
       recordAttempt({
-        problem,
+        problem: prob,
         result,
         minutes: minutesSpent,
         hintsUsed,
@@ -108,9 +97,9 @@ export default function PracticeWorkspace() {
         patternCorrect,
         timeCorrect,
         spaceCorrect,
-        expectedTime: problem.complexity.time,
-        expectedSpace: problem.complexity.space,
-        expectedPattern: problem.pattern,
+        expectedTime: prob.complexity.time,
+        expectedSpace: prob.complexity.space,
+        expectedPattern: prob.pattern,
         hintsUsed,
         minutes: minutesSpent,
         score,
@@ -127,6 +116,7 @@ export default function PracticeWorkspace() {
   }
 
   const handleRun = async () => {
+    if (!problem) return
     setRunning(true)
     const tests = problem.testCases ?? [{ input: 'sample input', output: 'sample output' }]
     const res = await runnerRef.current.run(code, tests)
@@ -134,15 +124,35 @@ export default function PracticeWorkspace() {
     setRunning(false)
   }
 
-  const handleGrade = (g: 'again' | 'hard' | 'good' | 'easy' | 'mastered') => {
+  const handleGrade = (g: 'again' | 'hard' | 'good' | 'easy' | 'mastered', confidence?: number) => {
+    if (!problem) return
     scheduleReview(problem.id, g)
+    if (confidence !== undefined) setConfidence(problem.id, confidence)
     setPost(null)
   }
 
   const difficultyClass =
-    problem.difficulty === 'Easy' ? 'text-good' : problem.difficulty === 'Medium' ? 'text-warn' : 'text-bad'
+    problem?.difficulty === 'Easy'
+      ? 'text-good'
+      : problem?.difficulty === 'Medium'
+        ? 'text-warn'
+        : 'text-bad'
 
   const hidePattern = mode === 'blind'
+
+  if (!problem) {
+    return (
+      <div className="mx-auto max-w-3xl p-8">
+        <EmptyState
+          title="Problem not found"
+          message="This problem does not exist in the curriculum. It may have been renamed or the link is stale."
+          action={<Link to="/roadmap" className="btn-primary">Back to Roadmap</Link>}
+        />
+      </div>
+    )
+  }
+
+  const alreadySolved = progress.solvedProblems.includes(problem.id)
 
   return (
     <div className="flex flex-col lg:h-screen">
@@ -322,11 +332,23 @@ export default function PracticeWorkspace() {
         <PreSubmitModal
           onCancel={() => setPhase('practicing')}
           onConfirm={(answers) => {
+            // Guard against double-clicks while the async run is in flight —
+            // a second confirm would log a duplicate attempt.
+            if (submittingRef.current) return
+            submittingRef.current = true
             const tests = problem.testCases ?? []
-            const res = runnerRef.current.run(code, tests) // sync check for pass/fail
-            void res
-            const passed = tests.length === 0 ? true : codeLooksSolved(code)
-            finishAttempt(answers, passed)
+            if (tests.length === 0) {
+              finishAttempt(answers, true)
+              submittingRef.current = false
+              return
+            }
+            // Grade the attempt on the real test outcome (the runner is async).
+            void runnerRef.current
+              .run(code, tests)
+              .then((res) => finishAttempt(answers, res.ok))
+              .finally(() => {
+                submittingRef.current = false
+              })
           }}
         />
       )}
@@ -346,28 +368,6 @@ function normalizeComplexity(s: string): string {
   return s.replace(/\s+/g, '').toLowerCase().replace('·', '*').replace('\u00b7', '*')
 }
 
-function codeLooksSolved(code: string): boolean {
-  const hasLoop = /\b(for|while)\b/.test(code)
-  const hasReturn = /\breturn\b/.test(code)
-  return hasLoop && hasReturn
-}
-
-function computeScoreLocal(
-  result: string,
-  hintsUsed: number,
-  minutes: number,
-  estimated: number,
-): number {
-  let score = 100
-  if (result === 'solved-no-hints') score -= 0
-  else if (result === 'solved-with-hints') score -= 12 * Math.min(4, Math.max(1, hintsUsed))
-  else if (result === 'solved-after-reveal') score -= 55
-  else score -= 70
-  if (minutes > estimated) score -= Math.min(15, Math.round(((minutes - estimated) / Math.max(estimated, 1)) * 15))
-  if (minutes <= estimated * 0.6) score += 5
-  return Math.max(0, Math.min(100, Math.round(score)))
-}
-
 /** Naive formatter: normalizes indentation to 4 spaces per brace depth. */
 function formatJava(code: string): string {
   let depth = 0
@@ -376,12 +376,14 @@ function formatJava(code: string): string {
     .map((line) => {
       const t = line.trim()
       if (!t) return ''
-      if (t.startsWith('}')) depth = Math.max(0, depth - 1)
-      const out = '    '.repeat(depth) + t
+      // A leading '}' means this line *closes* the current block: indent at one
+      // level shallower, and count that close only once (via `leading`).
+      const leading = t.startsWith('}') ? 1 : 0
+      const indentDepth = Math.max(0, depth - leading)
+      const out = '    '.repeat(indentDepth) + t
       const opens = (t.match(/{/g) ?? []).length
       const closes = (t.match(/}/g) ?? []).length
       depth = Math.max(0, depth + opens - closes)
-      if (t.startsWith('}')) depth = Math.max(0, depth + (opens - closes)) // closing lines counted too
       return out
     })
     .join('\n')

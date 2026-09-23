@@ -23,19 +23,28 @@ export default function OAMode() {
   const solvedSet = new Set(progress.solvedProblems)
 
   const picked = useMemo(() => {
-    // Prefer unsolved problems across mixed difficulties
+    // Prefer unsolved problems across mixed difficulties; never pick twice.
     const unsolved = PROBLEMS.filter((p) => !solvedSet.has(p.id))
     const pool = unsolved.length >= config.problems ? unsolved : PROBLEMS
     const easy = pool.filter((p) => p.difficulty === 'Easy')
     const medium = pool.filter((p) => p.difficulty === 'Medium')
     const hard = pool.filter((p) => p.difficulty === 'Hard')
-    const out = []
+    const used = new Set<string>()
+    const out: typeof PROBLEMS = []
     for (let i = 0; i < config.problems; i++) {
       const round = i % 3
       const src = round === 0 ? easy : round === 1 ? medium : hard
-      out.push((src[i % src.length] ?? pool[i]) ?? PROBLEMS[i])
+      const fallback = round === 0 ? medium : round === 1 ? hard : easy
+      const candidates = [...src, ...fallback, ...pool, ...PROBLEMS]
+      const pick =
+        candidates.find((p) => !used.has(p.id)) ??
+        PROBLEMS.find((p) => !used.has(p.id))
+      if (pick && !used.has(pick.id)) {
+        used.add(pick.id)
+        out.push(pick)
+      }
     }
-    return out.filter(Boolean).slice(0, config.problems)
+    return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config, progress.solvedProblems.length])
 

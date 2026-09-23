@@ -20,6 +20,7 @@ import {
 import type { DayPlan, DayTask, UserProgress, WeeklyPlan } from '../../types'
 import {
   buildWeekPlan,
+  dayDiff,
   dayKeyOf,
   dayStatus,
   freezeUsedOn,
@@ -34,6 +35,7 @@ import {
   weekStartOf,
   weekStartPlus,
   weekTrend,
+  withinWeek,
   type DayStatus,
   type WeekAggregate,
 } from '../../lib/planner'
@@ -330,8 +332,8 @@ function ScorePart({ label, value, max, hint }: { label: string; value: number; 
 function completionPart(agg: WeekAggregate): number {
   const today = todayKey()
   let expected = agg.target
-  if (agg.target > 0 && agg.weekStart <= today && today <= weekStartPlus(agg.weekStart, 6).toISOString().slice(0, 10)) {
-    const dayIdx = Math.min(6, Math.floor((new Date(today + 'T00:00:00').getTime() - new Date(agg.weekStart + 'T00:00:00').getTime()) / 86_400_000))
+  if (agg.target > 0 && withinWeek(today, agg.weekStart)) {
+    const dayIdx = Math.min(6, dayDiff(today, agg.weekStart))
     expected = Math.max(1, Math.round((agg.target * (dayIdx + 1)) / 7))
   }
   return agg.target > 0 ? Math.min(1, agg.done / expected) * 60 : 0

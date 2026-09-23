@@ -102,7 +102,8 @@ export function PostSolveModal({
 }: {
   problem: Problem
   data: PostSolveData
-  onGrade: (g: ReviewGrade) => void
+  /** `confidence` rides along so the rating is persisted with the grade. */
+  onGrade: (g: ReviewGrade, confidence?: number) => void
   onClose: () => void
 }) {
   const [confidence, setConfidence] = useState(3)
@@ -162,12 +163,11 @@ export function PostSolveModal({
           Same pattern, different surface problem — try next
         </h3>
         <div className="flex flex-wrap gap-2">
-          {related.map((r) => (
-            <a key={r.id} href={`#/practice/${r.id}`} className="btn-ghost text-xs">
-              {r.title}
-            </a>
-          ))}
-          {nextProblems(problem).map((r) => (
+          {[
+            ...new Map(
+              [...related, ...nextProblems(problem)].map((r) => [r.id, r] as const),
+            ).values(),
+          ].map((r) => (
             <a key={r.id} href={`#/practice/${r.id}`} className="btn-ghost text-xs">
               {r.title}
             </a>
@@ -191,7 +191,7 @@ export function PostSolveModal({
         />
         <div className="mt-3 flex flex-wrap gap-2">
           {(['again', 'hard', 'good', 'easy', 'mastered'] as ReviewGrade[]).map((g) => (
-            <button key={g} className="btn-ghost text-xs capitalize" onClick={() => onGrade(g)}>
+            <button key={g} className="btn-ghost text-xs capitalize" onClick={() => onGrade(g, confidence)}>
               {g}
             </button>
           ))}

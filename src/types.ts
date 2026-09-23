@@ -152,6 +152,8 @@ export interface UserProgress {
   lastPracticeDate: string | null
   /** Current streak-freeze balance (auto-consumed to bridge a missed day). */
   streakFreezes: number
+  /** Total freezes ever granted (awarded every 4th solve, capped); balance = granted − used. */
+  streakFreezesGranted: number
   /** ISO day keys where a freeze was consumed to bridge a 1-day gap. */
   streakFreezeDays: string[]
   confidence: Record<string, number>
