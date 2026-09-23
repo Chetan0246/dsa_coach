@@ -21,6 +21,15 @@ import SettingsPage from './pages/SettingsPage'
 import NotFound from './pages/NotFound'
 import Onboarding from './pages/Onboarding'
 import { useProgress } from './state/progress'
+import { PROBLEMS } from './data'
+
+function PracticeRedirect() {
+  const { progress } = useProgress()
+  const location = useLocation()
+  const solved = new Set(progress.solvedProblems)
+  const nextProb = PROBLEMS.find((p) => !solved.has(p.id)) ?? PROBLEMS[0]
+  return <Navigate to={`/practice/${nextProb.id}${location.search}`} replace />
+}
 
 export default function App() {
   const { settings } = useProgress()
@@ -58,7 +67,7 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Dashboard />} />
               <Route path="/roadmap" element={<Roadmap />} />
-              <Route path="/practice" element={<Navigate to="/" replace />} />
+              <Route path="/practice" element={<PracticeRedirect />} />
               <Route path="/practice/:problemId" element={<PracticeWorkspace />} />
               <Route path="/patterns" element={<PatternsLibrary />} />
               <Route path="/drill" element={<PatternDrill />} />

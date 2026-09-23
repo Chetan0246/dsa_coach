@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "esbuild scripts/verify-all.ts --bundle --platform=node | node"
   },
   "dependencies": {
     "lucide-react": "^0.544.0",

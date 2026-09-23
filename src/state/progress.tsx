@@ -224,8 +224,6 @@ function reducer(state: UserProgress, action: Action): UserProgress {
       else completedTasks[key] = true
       return { ...state, weeklyPlan: { ...plan, completedTasks } }
     }
-    case 'confidence':
-      return { ...state, confidence: { ...state.confidence, [action.problemId]: action.value } }
     case 'confidence': {
       // Store per-problem confidence and stamp it on the most recent attempt so
       // Analytics' confidence-vs-outcome chart reflects the rating.
@@ -237,7 +235,14 @@ function reducer(state: UserProgress, action: Action): UserProgress {
           break
         }
       }
-      return { ...state, confidence, attempts }
+      const problemStats = { ...state.problemStats }
+      if (problemStats[action.problemId]) {
+        problemStats[action.problemId] = {
+          ...problemStats[action.problemId],
+          lastConfidence: action.value,
+        }
+      }
+      return { ...state, confidence, attempts, problemStats }
     }
     case 'reset':
       return emptyProgress()

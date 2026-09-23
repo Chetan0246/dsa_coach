@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { X } from 'lucide-react'
 import type { Problem, ReviewGrade } from '../../types'
 import { PATTERNS } from '../../data/patterns'
@@ -11,7 +12,158 @@ export interface SubmissionAnswers {
   space: string
 }
 
-const COMPLEXITY_CHOICES = ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)', 'O(n²)', 'O(2^n)', 'O(n³)', "O(n·m)"]
+export const COMPLEXITY_CHOICES = [
+  'O(1)',
+  'O(log n)',
+  'O(n)',
+  'O(n log n)',
+  'O(n²)',
+  'O(n³)',
+  'O(n·m)',
+  'O(2^n)',
+  'O(n!)',
+  'O(V + E)',
+  'O(h)',
+]
+
+export function matchComplexity(user: string, expected: string): boolean {
+  if (!user || !expected) return false
+  const u = user.toLowerCase().replace(/\s+/g, '').replace(/·/g, '*')
+  const e = expected.toLowerCase().replace(/\s+/g, '').replace(/·/g, '*')
+
+  if (u === e) return true
+
+  // Extract content inside outer O(...)
+  let inner = ''
+  const oStart = expected.indexOf('(')
+  if (oStart !== -1) {
+    let depth = 0
+    for (let i = oStart; i < expected.length; i++) {
+      if (expected[i] === '(') depth++
+      else if (expected[i] === ')') {
+        depth--
+        if (depth === 0) {
+          inner = expected.substring(oStart + 1, i).toLowerCase().replace(/\s+/g, '').replace(/·/g, '*')
+          break
+        }
+      }
+    }
+  }
+
+  // Constant time/space: O(1), O(81), O(32), O(26), O(alphabet)
+  if (u === 'o(1)') {
+    if (/^o\(\s*(\d+|alphabet)\s*\)/i.test(expected)) return true
+    if (e.includes('effectivelyo(1)') || e.includes('boundedby') || e.includes('o(1)')) return true
+  }
+
+  // O(n*m) or O(m*n)
+  if (u === 'o(n*m)' || u === 'o(nm)' || u === 'o(n·m)') {
+    if (
+      inner === 'n*m' ||
+      inner === 'm*n' ||
+      inner === 'nm' ||
+      inner === 'mn' ||
+      (inner.includes('m') && inner.includes('n') && !inner.includes('log'))
+    ) {
+      return true
+    }
+  }
+
+  // O(n log n)
+  if (u === 'o(nlogn)') {
+    if (
+      inner.includes('nlogn') ||
+      inner.includes('logn*n') ||
+      inner.includes('nlogk') ||
+      inner.includes('nlogmaxpile') ||
+      inner.includes('elogv') ||
+      inner.includes('eloge')
+    ) {
+      return true
+    }
+  }
+
+  // O(log n)
+  if (u === 'o(logn)') {
+    if (
+      inner === 'logn' ||
+      inner.includes('log(m*n)') ||
+      inner.includes('log(min(m,n))') ||
+      inner === 'logk' ||
+      (inner.includes('h') && !inner.includes('n'))
+    ) {
+      return true
+    }
+  }
+
+  // O(n)
+  if (u === 'o(n)') {
+    if (
+      inner === 'n' ||
+      inner === 'l' ||
+      inner === 'v' ||
+      inner === 'e' ||
+      inner === 'k' ||
+      inner === 'tweets' ||
+      inner === 'capacity' ||
+      inner === 'amount' ||
+      inner === 'target' ||
+      inner === 'numberofsetbits' ||
+      inner === 'totalcharacters' ||
+      inner.startsWith('n+') ||
+      inner.startsWith('n(') ||
+      inner.includes('nrecursion')
+    ) {
+      return true
+    }
+    if (inner.includes('h') && !inner.includes('n*')) return true
+  }
+
+  // O(n²)
+  if (u === 'o(n²)' || u === 'o(n^2)') {
+    if (inner.includes('n²') || inner.includes('n^2') || inner === 'nl²' || inner.includes('n*l') || inner.includes('nl')) {
+      return true
+    }
+  }
+
+  // O(n³)
+  if (u === 'o(n³)' || u === 'o(n^3)') {
+    if (inner.includes('n³') || inner.includes('n^3')) return true
+  }
+
+  // O(2^n)
+  if (u === 'o(2^n)') {
+    if (
+      inner.includes('2^n') ||
+      inner.includes('4^n') ||
+      inner.includes('4^') ||
+      inner.includes('candidates^depth') ||
+      inner.includes('26^l')
+    ) {
+      return true
+    }
+  }
+
+  // O(n!)
+  if (u === 'o(n!)') {
+    if (inner.includes('n!')) return true
+  }
+
+  // O(V + E)
+  if (u === 'o(v+e)') {
+    if (inner.includes('v+e') || inner.includes('e+v') || inner.includes('v') || inner.includes('e')) return true
+  }
+
+  // O(h)
+  if (u === 'o(h)') {
+    if (inner.includes('h') || inner.includes('w')) return true
+  }
+
+  // General check
+  if (inner === u.replace(/^o\((.*)\)$/, '$1')) return true
+
+  return false
+}
 
 /** Pre-submit reflection: pattern + complexity self-identification. */
 export function PreSubmitModal({
@@ -168,9 +320,14 @@ export function PostSolveModal({
               [...related, ...nextProblems(problem)].map((r) => [r.id, r] as const),
             ).values(),
           ].map((r) => (
-            <a key={r.id} href={`#/practice/${r.id}`} className="btn-ghost text-xs">
+            <Link
+              key={r.id}
+              to={`/practice/${r.id}`}
+              onClick={onClose}
+              className="btn-ghost text-xs"
+            >
               {r.title}
-            </a>
+            </Link>
           ))}
         </div>
       </div>

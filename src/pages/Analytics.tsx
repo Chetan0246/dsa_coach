@@ -37,10 +37,13 @@ export default function Analytics() {
   const confidenceBuckets = useMemo(() => {
     const buckets = [0, 0, 0, 0, 0]
     for (const a of progress.attempts) {
-      if (a.confidence) buckets[Math.min(4, a.confidence - 1)]++
+      const conf = a.confidence ?? progress.confidence[a.problemId]
+      if (typeof conf === 'number' && conf >= 1 && conf <= 5) {
+        buckets[conf - 1]++
+      }
     }
     return buckets
-  }, [progress.attempts])
+  }, [progress.attempts, progress.confidence])
 
   const maxDay = Math.max(1, ...solvedByDay.map(([, c]) => c))
   const maxConf = Math.max(1, ...confidenceBuckets)

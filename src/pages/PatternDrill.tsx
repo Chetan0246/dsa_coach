@@ -42,6 +42,7 @@ export default function PatternDrill() {
     })
     if (!isRight) {
       addMistake({
+        problemId: problem.id,
         type: 'Pattern recognition' as MistakeType,
         note: `Drill: mistook "${problem.title}" for ${choice} instead of ${problem.pattern}.`,
       })

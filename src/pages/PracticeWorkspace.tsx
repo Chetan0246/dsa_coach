@@ -15,7 +15,13 @@ import { computeScore, useProgress } from '../state/progress'
 import { createCodeRunner } from '../lib/runner/runner'
 import { fmtClock, classNames } from '../lib/utils'
 import CoachPanel from '../components/practice/CoachPanel'
-import { PreSubmitModal, PostSolveModal, type PostSolveData, type SubmissionAnswers } from '../components/practice/SubmissionFlow'
+import {
+  PreSubmitModal,
+  PostSolveModal,
+  matchComplexity,
+  type PostSolveData,
+  type SubmissionAnswers,
+} from '../components/practice/SubmissionFlow'
 import EmptyState from '../components/common/EmptyState'
 import CodeBlock from '../components/common/CodeBlock'
 
@@ -24,7 +30,7 @@ type Phase = 'practicing' | 'reflecting' | 'evaluated'
 export default function PracticeWorkspace() {
   const { problemId } = useParams()
   const [params] = useSearchParams()
-  const { progress, codeFiles, saveCodeFor, recordAttempt, scheduleReview, setNote, setConfidence } = useProgress()
+  const { progress, codeFiles, saveCodeFor, recordAttempt, scheduleReview, setNote, setConfidence, addMistake } = useProgress()
   const problem: Problem | undefined = problemId ? getProblem(problemId) : undefined
 
   const mode: Settings['coachMode'] = useMemo(() => {
@@ -37,12 +43,13 @@ export default function PracticeWorkspace() {
   const [phase, setPhase] = useState<Phase>('practicing')
   const [stage, setStage] = useState<CoachStageId>(1)
   const [hintsUsed, setHintsUsed] = useState(0)
-  const [startedAt] = useState(() => Date.now())
+  const [startedAt, setStartedAt] = useState(() => Date.now())
+  const [elapsed, setElapsed] = useState(0)
+  const [finalElapsed, setFinalElapsed] = useState<number | null>(null)
   const [runResult, setRunResult] = useState<{ ok: boolean; cases: { name: string; passed: boolean; detail: string }[]; stderr?: string } | null>(null)
   const [running, setRunning] = useState(false)
   const [revealed, setRevealed] = useState(false)
   const [post, setPost] = useState<PostSolveData | null>(null)
-  const [elapsed, setElapsed] = useState(0)
   const [mobileCoachOpen, setMobileCoachOpen] = useState(false)
   const runnerRef = useRef(createCodeRunner())
   const submittingRef = useRef(false)
@@ -58,24 +65,29 @@ export default function PracticeWorkspace() {
     setRunResult(null)
     setRevealed(false)
     setPost(null)
+    setStartedAt(Date.now())
+    setElapsed(0)
+    setFinalElapsed(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problem?.id])
 
-  // Timer
+  // Timer: only ticks while actively practicing
   useEffect(() => {
+    if (phase !== 'practicing') return
     const t = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
     return () => clearInterval(t)
-  }, [startedAt])
+  }, [startedAt, phase])
 
-  const minutesSpent = Math.max(1, Math.round(elapsed / 60))
+  const activeSeconds = finalElapsed ?? elapsed
+  const minutesSpent = Math.max(1, Math.round(activeSeconds / 60))
   const prob = problem // narrowed alias for the hook closure; undefined-safe below
 
   const finishAttempt = useCallback(
     (answers: SubmissionAnswers, passed: boolean) => {
       if (!prob) return
       const patternCorrect = answers.pattern === prob.pattern
-      const timeCorrect = normalizeComplexity(answers.time) === normalizeComplexity(prob.complexity.time)
-      const spaceCorrect = normalizeComplexity(answers.space) === normalizeComplexity(prob.complexity.space)
+      const timeCorrect = matchComplexity(answers.time, prob.complexity.time)
+      const spaceCorrect = matchComplexity(answers.space, prob.complexity.space)
       const result =
         !passed
           ? 'failed'
@@ -92,6 +104,13 @@ export default function PracticeWorkspace() {
         hintsUsed,
         patternCorrect,
       })
+      if (!passed) {
+        addMistake({
+          problemId: prob.id,
+          type: 'Logic',
+          note: `Failed tests on "${prob.title}".`,
+        })
+      }
       const data: PostSolveData = {
         passed,
         patternCorrect,
@@ -108,17 +127,22 @@ export default function PracticeWorkspace() {
       setPhase('evaluated')
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [problem, hintsUsed, revealed, minutesSpent, recordAttempt],
+    [problem, hintsUsed, revealed, minutesSpent, recordAttempt, addMistake],
   )
 
   const handleSubmit = () => {
+    setFinalElapsed(elapsed)
     setPhase('reflecting')
   }
 
   const handleRun = async () => {
     if (!problem) return
     setRunning(true)
-    const tests = problem.testCases ?? [{ input: 'sample input', output: 'sample output' }]
+    const fallbackCase = {
+      input: problem.examples[0]?.input ?? 'sample input',
+      output: problem.examples[0]?.output ?? 'sample output',
+    }
+    const tests = problem.testCases && problem.testCases.length > 0 ? problem.testCases : [fallbackCase]
     const res = await runnerRef.current.run(code, tests)
     setRunResult(res)
     setRunning(false)
@@ -238,7 +262,10 @@ export default function PracticeWorkspace() {
               </button>
               <button
                 className="btn-ghost !px-2 !py-1 text-xs"
-                onClick={() => setCode(template)}
+                onClick={() => {
+                  setCode(template)
+                  saveCodeFor(problem.id, template)
+                }}
                 title="Reset to template"
               >
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -252,7 +279,11 @@ export default function PracticeWorkspace() {
               </button>
               <button
                 className="btn-ghost !px-2 !py-1 text-xs"
-                onClick={() => setCode(formatJava(code))}
+                onClick={() => {
+                  const formatted = formatJava(code)
+                  setCode(formatted)
+                  saveCodeFor(problem.id, formatted)
+                }}
                 title="Format (normalizes indentation)"
               >
                 <Wand2 className="h-3.5 w-3.5" />
@@ -321,7 +352,10 @@ export default function PracticeWorkspace() {
               onStageChange={setStage}
               mode={hidePattern ? 'blind' : mode}
               onHintUsed={() => setHintsUsed((h) => h + 1)}
-              onRevealSolution={() => setRevealed(true)}
+              onRevealSolution={() => {
+                setRevealed(true)
+                setMobileCoachOpen(false)
+              }}
             />
           </div>
         </div>
@@ -330,18 +364,21 @@ export default function PracticeWorkspace() {
       {/* Modals */}
       {phase === 'reflecting' && (
         <PreSubmitModal
-          onCancel={() => setPhase('practicing')}
+          onCancel={() => {
+            setStartedAt(Date.now() - (finalElapsed ?? elapsed) * 1000)
+            setFinalElapsed(null)
+            setPhase('practicing')
+          }}
           onConfirm={(answers) => {
             // Guard against double-clicks while the async run is in flight —
             // a second confirm would log a duplicate attempt.
             if (submittingRef.current) return
             submittingRef.current = true
-            const tests = problem.testCases ?? []
-            if (tests.length === 0) {
-              finishAttempt(answers, true)
-              submittingRef.current = false
-              return
+            const fallbackCase = {
+              input: problem.examples[0]?.input ?? 'sample input',
+              output: problem.examples[0]?.output ?? 'sample output',
             }
+            const tests = problem.testCases && problem.testCases.length > 0 ? problem.testCases : [fallbackCase]
             // Grade the attempt on the real test outcome (the runner is async).
             void runnerRef.current
               .run(code, tests)
@@ -362,10 +399,6 @@ export default function PracticeWorkspace() {
       )}
     </div>
   )
-}
-
-function normalizeComplexity(s: string): string {
-  return s.replace(/\s+/g, '').toLowerCase().replace('·', '*').replace('\u00b7', '*')
 }
 
 /** Naive formatter: normalizes indentation to 4 spaces per brace depth. */

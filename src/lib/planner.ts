@@ -188,8 +188,6 @@ export function dayStatus(plan: WeeklyPlan | null, day: DayPlan, p: UserProgress
       completed++
     }
   }
-  // Past days default to done so the heatmap stays meaningful.
-  if (day.date < todayKey() && completed === 0) completed = day.tasks.length
 
   const targetCount = day.tasks.length
   const completedCount = Math.min(completed, Math.max(targetCount, 1))

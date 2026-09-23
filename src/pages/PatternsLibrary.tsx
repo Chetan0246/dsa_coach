@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronDown, Zap } from 'lucide-react'
 import PageHeader from '../components/common/PageHeader'
@@ -11,6 +11,15 @@ export default function PatternsLibrary() {
   const location = useLocation()
   const hash = location.hash.replace('#', '')
   const [openId, setOpenId] = useState<string | null>(hash || (PATTERNS[0]?.id ?? null))
+
+  useEffect(() => {
+    if (hash) {
+      setOpenId(hash)
+      setTimeout(() => {
+        document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth' })
+      }, 50)
+    }
+  }, [hash])
 
   return (
     <div className="mx-auto max-w-4xl p-6 lg:p-8">

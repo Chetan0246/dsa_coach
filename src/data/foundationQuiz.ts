@@ -81,7 +81,7 @@ export const FOUNDATION_QUESTIONS: FoundationQuestion[] = [
     why: 'The constructor copies the current contents; the live path continues to add/remove during recursion.',
   },
   {
-    q: 'What is (7 + 2) / 2 in Java, and what is the correct integer ceiling of 7/2?',
+    q: 'What is 7 / 2 in Java, and what is the correct integer ceiling of 7/2?',
     options: ['3 and 4 via (7 + 2 - 1) / 2', '4 and 4', '3.5 and 4', '4 and 3'],
     correct: 0,
     why: 'Integer division truncates. The ceil idiom for a/b is (a + b - 1) / b.',

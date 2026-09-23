@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import PageHeader from '../components/common/PageHeader'
 import EmptyState from '../components/common/EmptyState'
 import { getProblem } from '../data'
@@ -94,7 +95,11 @@ export default function Mistakes() {
             <li key={m.id} className="card flex items-start gap-3 p-4 text-sm">
               <span className="code rounded bg-warn-soft px-2 py-0.5 text-[11px] text-warn">{m.type}</span>
               <span className="min-w-0 flex-1">{m.note}</span>
-              {p && <span className="code hidden text-xs text-mute-dark sm:inline">{p.title}</span>}
+              {p && (
+                <Link to={`/practice/${p.id}`} className="code hidden text-xs text-mute-dark hover:text-accent sm:inline">
+                  {p.title}
+                </Link>
+              )}
               <span className="code shrink-0 text-xs text-mute-dark">{fmtRelative(m.createdAt)}</span>
             </li>
           )

@@ -23,11 +23,13 @@ export default function CoachPanel({ problem, stage, onStageChange, mode, onHint
   const providerRef = useRef(createAIProvider())
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  // Reset when the problem changes
+  // Reset and seed the coach prompt when the problem changes
   useEffect(() => {
-    setMessages([])
+    const stageDef = COACH_STAGE_BY_ID[stage]
+    setMessages(stageDef ? [{ role: 'coach', text: stageDef.prompt, stage, at: Date.now() }] : [])
     setHintLevel(0)
     setInput('')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [problem.id])
 
   // Seed the stage prompt when it changes
