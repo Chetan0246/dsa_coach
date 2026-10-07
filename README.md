@@ -6,7 +6,7 @@ A lightweight, local-first AI DSA coach for Java OA preparation. 150 problems ac
 families, a six-stage Socratic coach, progressive hints, pattern drills, spaced-repetition review,
 and full progress tracking — all in your browser, no backend, no login.
 
-## Run
+## How to run
 
 ```bash
 npm install
